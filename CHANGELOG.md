@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0] - 2026-08-21
+
+### Added
+- Support for datasets referenced by rules, including safe path rewriting and
+  cleanup of unreferenced managed dataset files
+- A `--suricata-version` update option, with automatic version detection from
+  `suricata -V` when no override is provided
+- Repeatable `--disable-regex` and `--disable-substring` update filters for
+  removing matching enabled rules from the final ruleset
+- Public library helpers for invoking commands and rule updates with a custom
+  path provider
+
+### Fixed
+- Detect downloaded source formats by content so tarballs, zip archives,
+  gzipped rules, and plain rule files work regardless of URL or cache filename
+
 ## [0.3.1] - 2025-07-07
 
 ### Changed
