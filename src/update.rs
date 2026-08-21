@@ -263,7 +263,8 @@ impl<'a> UpdateManager<'a> {
         let archive_path = self.download_source(source_name, source_info, force, quiet)?;
 
         // Extract files from archive
-        let source_files = self.extract_archive(&archive_path)?;
+        let url = self.resolve_url(&source_info.url);
+        let source_files = self.extract_archive(&archive_path, &url)?;
 
         // Partition source files into dependency files and rule files.
         let mut dep_files: HashMap<PathBuf, Vec<u8>> = HashMap::new();
@@ -454,33 +455,39 @@ impl<'a> UpdateManager<'a> {
         url_template.replace("%(__version__)s", &self.suricata_version)
     }
 
-    fn extract_archive(&self, archive_path: &Path) -> Result<Vec<SourceFile>> {
-        let mut files = Vec::new();
-        let file = fs::File::open(archive_path)?;
+    fn extract_archive(&self, archive_path: &Path, url: &str) -> Result<Vec<SourceFile>> {
+        let data = fs::read(archive_path)?;
+        Self::extract_source_files(data, url)
+    }
 
-        if archive_path.to_string_lossy().ends_with(".tar.gz") {
-            // Handle tar.gz files
-            let tar = GzDecoder::new(file);
-            let mut archive = Archive::new(tar);
+    /// Load the files provided by a downloaded source. The payload type
+    /// is detected from the content, not the URL or cache filename:
+    /// sources may be a tar.gz or zip archive, a gzipped rule file, or a
+    /// plain rule file.
+    fn extract_source_files(data: Vec<u8>, url: &str) -> Result<Vec<SourceFile>> {
+        const GZIP_MAGIC: &[u8] = &[0x1f, 0x8b];
+        const ZIP_MAGIC: &[u8] = b"PK\x03\x04";
 
-            for entry in archive.entries()? {
-                let mut entry = entry?;
-                let path = entry.path()?;
+        if data.starts_with(GZIP_MAGIC) {
+            let mut decompressed = Vec::new();
+            GzDecoder::new(data.as_slice())
+                .read_to_end(&mut decompressed)
+                .context("Failed to decompress gzip data")?;
 
-                // Skip directories
-                if entry.header().entry_type().is_dir() {
-                    continue;
-                }
-
-                let filename = path.to_string_lossy().to_string();
-                let mut content = Vec::new();
-                entry.read_to_end(&mut content)?;
-
-                files.push(SourceFile { filename, content });
+            if Self::is_tar(&decompressed) {
+                return Self::extract_tar(&decompressed);
             }
-        } else if archive_path.to_string_lossy().ends_with(".zip") {
-            // Handle zip files
-            let mut archive = ZipArchive::new(file)?;
+
+            // A single gzipped file, for example a bare .rules.gz.
+            return Ok(vec![SourceFile {
+                filename: Self::rules_filename_from_url(url.trim_end_matches(".gz")),
+                content: decompressed,
+            }]);
+        }
+
+        if data.starts_with(ZIP_MAGIC) {
+            let mut files = Vec::new();
+            let mut archive = ZipArchive::new(std::io::Cursor::new(data))?;
 
             for i in 0..archive.len() {
                 let mut file = archive.by_index(i)?;
@@ -496,11 +503,66 @@ impl<'a> UpdateManager<'a> {
 
                 files.push(SourceFile { filename, content });
             }
-        } else {
-            return Err(anyhow::anyhow!("Unsupported archive format"));
+
+            return Ok(files);
+        }
+
+        // Anything else is treated as a plain rule file.
+        Ok(vec![SourceFile {
+            filename: Self::rules_filename_from_url(url),
+            content: data,
+        }])
+    }
+
+    fn extract_tar(data: &[u8]) -> Result<Vec<SourceFile>> {
+        let mut files = Vec::new();
+        let mut archive = Archive::new(data);
+
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+            let path = entry.path()?;
+
+            // Skip directories
+            if entry.header().entry_type().is_dir() {
+                continue;
+            }
+
+            let filename = path.to_string_lossy().to_string();
+            let mut content = Vec::new();
+            entry.read_to_end(&mut content)?;
+
+            files.push(SourceFile { filename, content });
         }
 
         Ok(files)
+    }
+
+    /// True when the data looks like a tar archive: "ustar" magic at
+    /// offset 257 (covers both POSIX and GNU tar).
+    fn is_tar(data: &[u8]) -> bool {
+        data.len() > 262 && &data[257..262] == b"ustar"
+    }
+
+    /// Derive a filename for a single-file source from its URL, forcing
+    /// a .rules extension so the content is treated as a rule file.
+    fn rules_filename_from_url(url: &str) -> String {
+        let name = url
+            .split(['?', '#'])
+            .next()
+            .unwrap_or(url)
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or("")
+            .to_string();
+
+        if Self::is_rules_file(&name) {
+            name
+        } else if name.is_empty() {
+            DEFAULT_OUTPUT_FILE.to_string()
+        } else {
+            format!("{name}.rules")
+        }
     }
 
     fn is_rules_file(filename: &str) -> bool {
@@ -1001,6 +1063,81 @@ mod tests {
 
         let absolute = UpdateManager::normalize_relative_path(Path::new("/etc/shadow"));
         assert!(absolute.is_none());
+    }
+
+    #[test]
+    fn test_extract_source_files_detects_content_type() {
+        use std::io::Write;
+
+        let rules = b"alert ip any any -> any any (msg:\"test\"; sid:1; rev:1;)\n".to_vec();
+
+        // Plain rule file, no gzip involved.
+        let files = UpdateManager::extract_source_files(
+            rules.clone(),
+            "https://example.com/rules/trafficid.rules",
+        )
+        .unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "trafficid.rules");
+        assert_eq!(files[0].content, rules);
+
+        // Single gzipped rule file.
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&rules).unwrap();
+        let gzipped = encoder.finish().unwrap();
+        let files =
+            UpdateManager::extract_source_files(gzipped, "https://example.com/some.rules.gz")
+                .unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "some.rules");
+        assert_eq!(files[0].content, rules);
+
+        // Tar.gz archive.
+        let mut tar = tar::Builder::new(Vec::new());
+        let mut header = tar::Header::new_gnu();
+        header.set_size(rules.len() as u64);
+        header.set_cksum();
+        tar.append_data(&mut header, "rules/emerging-all.rules", rules.as_slice())
+            .unwrap();
+        let tar_data = tar.into_inner().unwrap();
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(&tar_data).unwrap();
+        let targz = encoder.finish().unwrap();
+        let files =
+            UpdateManager::extract_source_files(targz, "https://example.com/emerging.rules.tar.gz")
+                .unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "rules/emerging-all.rules");
+        assert_eq!(files[0].content, rules);
+
+        // Zip archive.
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        zip.start_file::<_, ()>("zipped.rules", zip::write::FileOptions::default())
+            .unwrap();
+        zip.write_all(&rules).unwrap();
+        let zip_data = zip.finish().unwrap().into_inner();
+        let files =
+            UpdateManager::extract_source_files(zip_data, "https://example.com/rules.zip").unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "zipped.rules");
+        assert_eq!(files[0].content, rules);
+    }
+
+    #[test]
+    fn test_rules_filename_from_url() {
+        assert_eq!(
+            UpdateManager::rules_filename_from_url("https://example.com/a/trafficid.rules"),
+            "trafficid.rules"
+        );
+        assert_eq!(
+            UpdateManager::rules_filename_from_url("https://example.com/feed?key=abc"),
+            "feed.rules"
+        );
+        assert_eq!(
+            UpdateManager::rules_filename_from_url("https://example.com/"),
+            "example.com.rules"
+        );
+        assert_eq!(UpdateManager::rules_filename_from_url(""), "suricata.rules");
     }
 
     #[test]
