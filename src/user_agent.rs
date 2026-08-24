@@ -163,7 +163,7 @@ impl fmt::Display for UserAgent {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Suricasta-Rules/{} (OS: {}; CPU: {}; Dist: {})",
+            "Suricatax-Rules/{} (OS: {}; CPU: {}; Dist: {})",
             self.version, self.os, self.cpu, self.dist
         )
     }
@@ -177,7 +177,7 @@ mod tests {
     fn test_user_agent_format() {
         let ua = UserAgent::new();
         let ua_string = ua.to_string();
-        assert!(ua_string.starts_with("Suricasta-Rules/"));
+        assert!(ua_string.starts_with("Suricatax-Rules/"));
         assert!(ua_string.contains("OS:"));
         assert!(ua_string.contains("CPU:"));
         assert!(ua_string.contains("Dist:"));

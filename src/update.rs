@@ -1384,7 +1384,7 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let root = std::env::temp_dir().join(format!("suricasta-rules-test-{unique}"));
+        let root = std::env::temp_dir().join(format!("suricatax-rules-test-{unique}"));
         let paths = TestPaths { root: root.clone() };
         let manager = UpdateManager::new_with_suricata_version(&paths, Some("7.0.0"));
 

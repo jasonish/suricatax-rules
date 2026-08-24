@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- Renamed the project from Suricasta Rules to Suricatax Rules
+
 ## [0.4.0] - 2026-08-21
 
 ### Added

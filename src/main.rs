@@ -3,10 +3,10 @@
 
 use clap::Parser;
 use colored::Colorize;
-use suricasta_rules::cli::Cli;
+use suricatax_rules::cli::Cli;
 
 fn main() {
-    if let Err(e) = suricasta_rules::run(Cli::parse()) {
+    if let Err(e) = suricatax_rules::run(Cli::parse()) {
         eprintln!("{}: {:#}", "Error".red().bold(), e);
         std::process::exit(1);
     }

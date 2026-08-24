@@ -1,4 +1,4 @@
-# Suricasta Rule Manager
+# Suricatax Rule Manager
 
 A minimal Suricata Rule Manager written in Rust.
 

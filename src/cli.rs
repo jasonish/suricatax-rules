@@ -10,7 +10,7 @@ use clap::builder::styling::{AnsiColor, Color, Style};
 use clap::{ArgAction, Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "suricasta-rules")]
+#[command(name = "suricatax-rules")]
 #[command(about = "Suricata Rule Manager")]
 #[command(version)]
 #[command(styles = get_styles())]
@@ -202,9 +202,9 @@ pub fn enabled_rulesets(path_provider: &dyn PathProvider) -> Result<Vec<String>>
 
 pub fn init_logging(verbose: u8) {
     let log_level = match verbose {
-        0 => "suricasta_rules=info",
-        1 => "suricasta_rules=debug",
-        _ => "suricasta_rules=trace",
+        0 => "suricatax_rules=info",
+        1 => "suricatax_rules=debug",
+        _ => "suricatax_rules=trace",
     };
 
     tracing_subscriber::fmt()
@@ -251,7 +251,7 @@ mod tests {
     #[test]
     fn test_update_command_parses_disable_filters() {
         let cli = Cli::try_parse_from([
-            "suricasta-rules",
+            "suricatax-rules",
             "update",
             "--disable-regex",
             "foo.*bar",
