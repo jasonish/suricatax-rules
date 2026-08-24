@@ -372,7 +372,7 @@ impl<'a> UpdateManager<'a> {
 
         let user_agent = UserAgent::new().to_string();
         debug!("Using User-Agent: {}", user_agent);
-        let client = reqwest::blocking::Client::builder()
+        let client = crate::http_client_builder()
             .user_agent(user_agent)
             .build()?;
         let mut response = client

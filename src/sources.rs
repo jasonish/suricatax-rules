@@ -104,7 +104,7 @@ impl<'a> SourceManager<'a> {
 
         let user_agent = UserAgent::new().to_string();
         debug!("Using User-Agent: {}", user_agent);
-        let client = reqwest::blocking::Client::builder()
+        let client = crate::http_client_builder()
             .user_agent(user_agent)
             .build()?;
         let response = client
@@ -233,7 +233,7 @@ impl<'a> SourceManager<'a> {
             let url = self.get_source_index_url();
             let user_agent = UserAgent::new().to_string();
             debug!("Using User-Agent: {}", user_agent);
-            let client = reqwest::blocking::Client::builder()
+            let client = crate::http_client_builder()
                 .user_agent(user_agent)
                 .build()?;
             let response = client
