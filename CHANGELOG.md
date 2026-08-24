@@ -1,10 +1,15 @@
 # Changelog
 
-## [Unreleased]
+## [0.5.0] - 2026-08-24
 
 ### Changed
 - Renamed the project from Suricasta Rules to Suricatax Rules
 - Relicensed the project from AGPL-3.0-only to MIT
+- Raised the minimum supported Rust version from 1.82 to 1.85
+- Updated dependencies, including reqwest 0.13
+
+### Security
+- Updated dependencies to resolve reported RustSec advisories
 
 ## [0.4.0] - 2026-08-21
 
