@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: Copyright 2025 Jason Ish <jason@codemonkey.net>
 
 use std::fmt;

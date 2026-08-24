@@ -4,6 +4,7 @@
 
 ### Changed
 - Renamed the project from Suricasta Rules to Suricatax Rules
+- Relicensed the project from AGPL-3.0-only to MIT
 
 ## [0.4.0] - 2026-08-21
 
