@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: Copyright 2025 Jason Ish <jason@codemonkey.net>
 
 use crate::paths::PathProvider;
-use crate::rulesets::RulesetManager;
-use crate::sources::{SourceInfo, SourceManager};
+use crate::rulesets::{EnabledSource, RulesetManager};
+use crate::sources::SourceManager;
 use crate::user_agent::UserAgent;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -160,14 +160,9 @@ impl<'a> UpdateManager<'a> {
 
         info_println!("{}", "Running Suricata rule update...".green().bold());
 
-        // First, update sources
-        let source_manager = SourceManager::new(self.path_provider);
-        info_println!("\n{}", "Updating sources...".cyan());
-        source_manager.update_sources_cached(force, quiet)?;
-
-        // Get enabled sources
+        // Read stored URLs before deciding whether the source index is needed.
         let ruleset_manager = RulesetManager::new(self.path_provider);
-        let mut enabled_sources = ruleset_manager.get_enabled_sources()?;
+        let mut enabled_sources = ruleset_manager.get_enabled_source_configs()?;
 
         // If no sources are enabled, use et/open as a fallback without enabling it
         if enabled_sources.is_empty() {
@@ -175,23 +170,38 @@ impl<'a> UpdateManager<'a> {
                 "{}: No sources configured, will use Emerging Threats Open as fallback",
                 "Info".yellow()
             );
-            enabled_sources = vec!["et/open".to_string()];
+            enabled_sources = vec![EnabledSource::new("et/open".to_string())];
         }
 
-        // Load source index (it should be fresh after update)
-        let source_index = source_manager.get_index()?.ok_or_else(|| {
-            anyhow::anyhow!(
-                "No sources index found after updating sources. The index download may have failed."
-            )
-        })?;
+        // Custom-only updates never fetch or read the index, even with --force.
+        let source_index = if enabled_sources.iter().any(|source| source.url.is_none()) {
+            let source_manager = SourceManager::new(self.path_provider);
+            info_println!("\n{}", "Updating sources...".cyan());
+            source_manager.update_sources_cached(force, quiet)?;
+            Some(source_manager.get_index()?.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No sources index found after updating sources. The index download may have failed."
+                )
+            })?)
+        } else {
+            None
+        };
 
         // Download and process each enabled source
         let mut all_rules: HashMap<String, Rule> = HashMap::new();
-        for source_name in &enabled_sources {
+        for source in &enabled_sources {
+            let source_name = &source.source;
             info_println!("\nProcessing source: {}", source_name.cyan());
 
-            if let Some(source_info) = source_index.sources.get(source_name) {
-                match self.process_source(source_name, source_info, force, quiet) {
+            let url = source.url.as_deref().or_else(|| {
+                source_index
+                    .as_ref()?
+                    .sources
+                    .get(source_name)
+                    .map(|info| info.url.as_str())
+            });
+            if let Some(url) = url {
+                match self.process_source(source_name, url, force, quiet) {
                     Ok(processed) => {
                         info_println!(
                             "  Loaded {} rules from {}",
@@ -255,15 +265,15 @@ impl<'a> UpdateManager<'a> {
     fn process_source(
         &self,
         source_name: &str,
-        source_info: &SourceInfo,
+        url_template: &str,
         force: bool,
         quiet: bool,
     ) -> Result<ProcessedSource> {
         // Download the source
-        let archive_path = self.download_source(source_name, source_info, force, quiet)?;
+        let archive_path = self.download_source(source_name, url_template, force, quiet)?;
 
         // Extract files from archive
-        let url = self.resolve_url(&source_info.url);
+        let url = self.resolve_url(url_template);
         let source_files = self.extract_archive(&archive_path, &url)?;
 
         // Partition source files into dependency files and rule files.
@@ -322,12 +332,12 @@ impl<'a> UpdateManager<'a> {
     fn download_source(
         &self,
         source_name: &str,
-        source_info: &SourceInfo,
+        url_template: &str,
         force: bool,
         quiet: bool,
     ) -> Result<PathBuf> {
         // Resolve URL template
-        let url = self.resolve_url(&source_info.url);
+        let url = self.resolve_url(url_template);
 
         // Generate cache filename based on URL hash
         let url_hash = format!("{:x}", md5::compute(url.as_bytes()));

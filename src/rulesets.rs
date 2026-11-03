@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright 2025 Jason Ish <jason@codemonkey.net>
 
 use crate::paths::PathProvider;
-use crate::sources::{SourceIndex, SourceInfo};
+use crate::sources::{SourceIndex, SourceInfo, SourceManager};
 use anyhow::{Context, Result};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
@@ -64,6 +64,14 @@ impl<'a> RulesetManager<'a> {
     }
 
     pub fn get_enabled_sources(&self) -> Result<Vec<String>> {
+        Ok(self
+            .get_enabled_source_configs()?
+            .into_iter()
+            .map(|source| source.source)
+            .collect())
+    }
+
+    pub(crate) fn get_enabled_source_configs(&self) -> Result<Vec<EnabledSource>> {
         let sources_dir = self.path_provider.sources_dir();
         let mut enabled = Vec::new();
 
@@ -77,24 +85,75 @@ impl<'a> RulesetManager<'a> {
                 let entry = entry?;
                 let path = entry.path();
                 if path.extension().and_then(|s| s.to_str()) == Some("yaml") {
-                    if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        if !std::path::Path::new(stem)
-                            .extension()
-                            .is_some_and(|ext| ext.eq_ignore_ascii_case("yaml"))
-                        {
-                            let content = fs::read_to_string(&path).with_context(|| {
-                                format!("Failed to read {}: permission denied", path.display())
-                            })?;
-                            let source: EnabledSource = serde_yaml::from_str(&content)
-                                .with_context(|| format!("Failed to parse {}", path.display()))?;
-                            enabled.push(source.source);
-                        }
-                    }
+                    let content = fs::read_to_string(&path)
+                        .with_context(|| format!("Failed to read {}", path.display()))?;
+                    let source: EnabledSource = serde_yaml::from_str(&content)
+                        .with_context(|| format!("Failed to parse {}", path.display()))?;
+                    enabled.push(source);
                 }
             }
         }
 
         Ok(enabled)
+    }
+
+    /// Add and immediately enable a URL source without downloading the source index.
+    /// A disabled source with the same name is replaced with the new URL.
+    pub fn add_custom_source(&self, name: &str, url: &str) -> Result<()> {
+        anyhow::ensure!(
+            !name.is_empty()
+                && !name.starts_with(['-', '.', '/'])
+                && name.bytes().all(|c| c.is_ascii_alphanumeric()
+                    || matches!(c, b'-' | b'_' | b'.' | b'/')),
+            "Invalid ruleset name: use ASCII letters, digits, '-', '_', '.', or '/', and do not start with '-', '.', or '/'"
+        );
+        let parsed_url = reqwest::Url::parse(url).context("Invalid ruleset URL")?;
+        anyhow::ensure!(
+            matches!(parsed_url.scheme(), "http" | "https"),
+            "Ruleset URL must use http or https"
+        );
+
+        anyhow::ensure!(
+            !self.is_source_enabled(name),
+            "Ruleset '{}' is already enabled or shares a filename with an enabled source",
+            name
+        );
+        if let Some(index) = SourceManager::new(self.path_provider).read_local_index()? {
+            for index_name in index.sources.keys() {
+                anyhow::ensure!(
+                    Self::safe_filename(index_name) != Self::safe_filename(name),
+                    "Ruleset '{}' exists in the source index or shares its filename; use enable-ruleset {} instead",
+                    index_name,
+                    index_name
+                );
+            }
+        }
+
+        let source_file = self.get_source_file_path(name);
+        let disabled_file = self.get_disabled_file_path(name);
+        if disabled_file.exists() {
+            let disabled: EnabledSource =
+                serde_yaml::from_str(&fs::read_to_string(&disabled_file)?)?;
+            anyhow::ensure!(
+                disabled.source == name,
+                "Ruleset '{}' shares a filename with disabled source '{}'",
+                name,
+                disabled.source
+            );
+        }
+
+        let mut source = EnabledSource::new(name.to_string());
+        // Preserve templates verbatim; resolve them only when downloading.
+        source.url = Some(url.to_string());
+        crate::paths::ensure_dir_exists(&self.path_provider.sources_dir())?;
+        fs::write(&source_file, serde_yaml::to_string(&source)?)
+            .with_context(|| format!("Failed to write source file {}", source_file.display()))?;
+        if disabled_file.exists() {
+            fs::remove_file(&disabled_file)
+                .with_context(|| format!("Failed to remove {}", disabled_file.display()))?;
+        }
+        println!("Enabled custom ruleset: {}", name.cyan());
+        Ok(())
     }
 
     pub fn enable_source(&self, name: &str, source_info: Option<&SourceInfo>) -> Result<()> {

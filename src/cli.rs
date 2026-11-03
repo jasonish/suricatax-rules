@@ -70,6 +70,15 @@ pub enum Commands {
         disable_substring: Vec<String>,
     },
 
+    #[command(about = "Add and enable a custom ruleset URL")]
+    AddSource {
+        #[arg(help = "Name of the custom ruleset")]
+        name: String,
+        #[arg(help = "HTTP or HTTPS URL of the ruleset")]
+        url: String,
+    },
+    #[command(about = "List enabled rulesets")]
+    ListRulesets,
     #[command(about = "Enable a ruleset")]
     EnableRuleset {
         #[arg(help = "Name of the ruleset to enable")]
@@ -109,6 +118,15 @@ pub fn run_with_path_provider(command: &Commands, path_provider: &dyn PathProvid
             disable_regex,
             disable_substring,
         ),
+        Commands::AddSource { name, url } => add_custom_ruleset(path_provider, name, url),
+        Commands::ListRulesets => {
+            let mut names = enabled_rulesets(path_provider)?;
+            names.sort();
+            for name in names {
+                println!("{name}");
+            }
+            Ok(())
+        }
         Commands::EnableRuleset { name } => {
             let source_manager = SourceManager::new(path_provider);
             let ruleset_manager = RulesetManager::new(path_provider);
@@ -188,6 +206,17 @@ pub fn enable_ruleset(path_provider: &dyn PathProvider, name: &str) -> Result<()
         .ok_or_else(|| anyhow::anyhow!("Unknown ruleset: {}", name))?;
 
     ruleset_manager.enable_source(name, Some(source_info))
+}
+
+/// Add and enable a custom HTTP(S) ruleset. No network access is required.
+///
+/// Names may contain ASCII letters, digits, `-`, `_`, `.`, and `/`, but must
+/// not be empty or start with `-`, `.`, or `/`. Enabled names and names in the
+/// locally cached source index are rejected. A disabled custom source is replaced.
+/// URL templates containing `%(__version__)s` are resolved during rule updates.
+/// Unlike enabling an index source, this does not also enable `et/open`.
+pub fn add_custom_ruleset(path_provider: &dyn PathProvider, name: &str, url: &str) -> Result<()> {
+    RulesetManager::new(path_provider).add_custom_source(name, url)
 }
 
 pub fn disable_ruleset(path_provider: &dyn PathProvider, name: &str) -> Result<()> {
