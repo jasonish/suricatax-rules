@@ -1,6 +1,18 @@
 # Changelog
 
-## [Unreleased]
+## [0.6.0] - 2026-11-03
+
+### Added
+- Custom HTTP(S) rulesets through `add-source <name> <url>` and the public
+  `cli::add_custom_ruleset` helper, with immediate enabling and URL validation
+- `list-rulesets` command to list enabled index and custom sources
+- Support for `%(__version__)s` in custom URLs using the existing Suricata
+  version selection and download pipeline
+- Custom-only rule updates without downloading or reading the source index
+- Replacement of disabled custom sources when re-added with a new URL
+
+### Fixed
+- Include valid source names ending in `.yaml` in enabled-source listings
 
 ### Changed
 - Replaced `zip` with `rawzip` and compatible compression decoders to retain
