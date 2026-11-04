@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- Replaced `zip` with `rawzip` and compatible compression decoders to retain
+  the Rust 1.85 minimum supported version shared with Suricata 9.0.0
+- Replaced deprecated `serde_yaml` with the maintained `yaml_serde` fork,
+  removing the unmaintained `unsafe-libyaml` dependency
+
+### Security
+- Removed the `zip` dependency affected by RUSTSEC-2026-0367,
+  RUSTSEC-2026-0368, RUSTSEC-2026-0369, and RUSTSEC-2026-0429
+
 ## [0.5.0] - 2026-08-24
 
 ### Changed

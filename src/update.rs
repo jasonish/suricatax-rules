@@ -20,7 +20,8 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 use tar::Archive;
 use tracing::debug;
-use zip::ZipArchive;
+
+mod zip;
 
 const DEFAULT_OUTPUT_FILE: &str = "suricata.rules";
 const DATASETS_DIR: &str = "datasets";
@@ -496,25 +497,7 @@ impl<'a> UpdateManager<'a> {
         }
 
         if data.starts_with(ZIP_MAGIC) {
-            let mut files = Vec::new();
-            let mut archive = ZipArchive::new(std::io::Cursor::new(data))?;
-
-            for i in 0..archive.len() {
-                let mut file = archive.by_index(i)?;
-
-                // Skip directories
-                if file.is_dir() {
-                    continue;
-                }
-
-                let filename = file.name().to_string();
-                let mut content = Vec::new();
-                file.read_to_end(&mut content)?;
-
-                files.push(SourceFile { filename, content });
-            }
-
-            return Ok(files);
+            return zip::read(&data);
         }
 
         // Anything else is treated as a plain rule file.
@@ -1121,11 +1104,13 @@ mod tests {
         assert_eq!(files[0].content, rules);
 
         // Zip archive.
-        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        zip.start_file::<_, ()>("zipped.rules", zip::write::FileOptions::default())
-            .unwrap();
-        zip.write_all(&rules).unwrap();
-        let zip_data = zip.finish().unwrap().into_inner();
+        let mut zip = rawzip::ZipArchiveWriter::new(Vec::new());
+        let (entry, config) = zip.new_file("zipped.rules").start().unwrap();
+        let mut writer = config.wrap(entry);
+        writer.write_all(&rules).unwrap();
+        let (entry, descriptor) = writer.finish().unwrap();
+        entry.finish(descriptor).unwrap();
+        let zip_data = zip.finish().unwrap();
         let files =
             UpdateManager::extract_source_files(zip_data, "https://example.com/rules.zip").unwrap();
         assert_eq!(files.len(), 1);

@@ -1,0 +1,3 @@
+# Keep dependency updates compatible with the package rust-version.
+[resolver]
+incompatible-rust-versions = "fallback"
