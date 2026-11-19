@@ -4,7 +4,6 @@
 use crate::paths::PathProvider;
 use crate::user_agent::UserAgent;
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -14,7 +13,7 @@ use tracing::debug;
 
 const DEFAULT_INDEX_URL: &str = "https://www.openinfosecfoundation.org/rules/index.yaml";
 const INDEX_FILENAME: &str = "index.yaml";
-const CACHE_MIN_AGE_SECS: i64 = 900; // 15 minutes
+const CACHE_MIN_AGE_SECS: u64 = 900; // 15 minutes
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub struct SourceInfo {
@@ -208,9 +207,7 @@ impl<'a> SourceManager<'a> {
         if !force && index_path.exists() {
             if let Ok(metadata) = fs::metadata(&index_path) {
                 if let Ok(modified) = metadata.modified() {
-                    let age = Utc::now()
-                        .signed_duration_since(DateTime::<Utc>::from(modified))
-                        .num_seconds();
+                    let age = modified.elapsed().unwrap_or_default().as_secs();
                     if age < CACHE_MIN_AGE_SECS {
                         if !quiet {
                             println!(

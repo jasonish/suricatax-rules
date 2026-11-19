@@ -6,7 +6,6 @@ use crate::rulesets::{EnabledSource, RulesetManager};
 use crate::sources::SourceManager;
 use crate::user_agent::UserAgent;
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
 use colored::Colorize;
 use flate2::read::GzDecoder;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -26,7 +25,7 @@ mod zip;
 const DEFAULT_OUTPUT_FILE: &str = "suricata.rules";
 const DATASETS_DIR: &str = "datasets";
 const LEGACY_MANAGED_DATASETS_DIR: &str = "suricasta";
-const CACHE_MIN_AGE_SECS: i64 = 900; // 15 minutes
+const CACHE_MIN_AGE_SECS: u64 = 900; // 15 minutes
 
 pub struct UpdateManager<'a> {
     path_provider: &'a dyn PathProvider,
@@ -349,9 +348,7 @@ impl<'a> UpdateManager<'a> {
         if !force && cache_path.exists() {
             if let Ok(metadata) = fs::metadata(&cache_path) {
                 if let Ok(modified) = metadata.modified() {
-                    let age = Utc::now()
-                        .signed_duration_since(DateTime::<Utc>::from(modified))
-                        .num_seconds();
+                    let age = modified.elapsed().unwrap_or_default().as_secs();
                     if age < CACHE_MIN_AGE_SECS {
                         if !quiet {
                             println!(
