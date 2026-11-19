@@ -8,6 +8,7 @@ check:
     cargo clippy --all-features --all-targets
     cargo clippy --all-features --all-targets --target x86_64-pc-windows-gnu
     cargo test
+    cargo msrv verify
 
 fix:
     cargo clippy --allow-dirty --fix --all-features
